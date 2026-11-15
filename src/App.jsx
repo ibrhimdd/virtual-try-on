@@ -56,22 +56,14 @@ function App() {
   async function loadPose() {
     if (poseRef.current) return poseRef.current
 
-    const wasmSources = [
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
-      'https://unpkg.com/@mediapipe/tasks-vision@0.10.22/wasm',
-    ]
+    // Load MediaPipe WASM assets from this deployment, not a third-party CDN.
+    // The prebuild script copies the installed package assets into /public/mediapipe/wasm.
     let vision
-    let wasmError
-    for (const source of wasmSources) {
-      try {
-        vision = await FilesetResolver.forVisionTasks(source)
-        break
-      } catch (error) {
-        wasmError = error
-        console.warn('MediaPipe WASM source failed:', source, error)
-      }
+    try {
+      vision = await FilesetResolver.forVisionTasks('/mediapipe/wasm')
+    } catch (error) {
+      throw new Error(`تعذر تحميل ملفات MediaPipe المحلية (WASM): ${describeError(error)}. أعد نشر المشروع بعد التأكد من تنفيذ خطوة نسخ ملفات WASM أثناء البناء.`)
     }
-    if (!vision) throw new Error(`تعذر تحميل ملفات MediaPipe (WASM): ${describeError(wasmError)}`)
 
     // Fetch the model ourselves so network/CORS/HTTP failures are reported clearly
     // instead of being reduced by the WASM loader to an opaque browser Event.
