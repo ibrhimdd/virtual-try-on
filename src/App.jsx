@@ -14,6 +14,20 @@ function garmentSvg(product) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 560"><defs><linearGradient id="fabric" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${product.accent}" stop-opacity=".28"/><stop offset=".45" stop-color="${product.tone}"/><stop offset="1" stop-color="#090b09" stop-opacity=".3"/></linearGradient></defs><path d="M180 52 Q250 20 320 52 L405 100 Q438 118 455 166 L405 205 365 166 375 510 Q250 540 125 510 L135 166 95 205 45 166 Q62 118 95 100Z" fill="url(#fabric)" stroke="${product.accent}" stroke-opacity=".58" stroke-width="5" stroke-linejoin="round"/>${hoodie ? '<path d="M180 58 Q250 150 320 58 Q310 12 250 10 Q190 12 180 58Z" fill="none" stroke="#d8d5ca" stroke-opacity=".45" stroke-width="8"/>' : ''}<path d="M180 53 Q250 115 320 53" fill="none" stroke="${product.accent}" stroke-opacity=".7" stroke-width="7"/>${jacket ? '<path d="M250 90 V510 M210 120 L250 155 290 120" stroke="#e2ddcd" stroke-opacity=".8" stroke-width="7" fill="none"/><path d="M155 310 H210 M290 310 H345" stroke="#d9d2bd" stroke-opacity=".55" stroke-width="5"/>' : '<path d="M150 485 Q250 505 350 485" stroke="${product.accent}" stroke-opacity=".45" stroke-width="5" fill="none"/>'}<path d="M110 115 L155 160 M390 115 L345 160" stroke="#fff" stroke-opacity=".12" stroke-width="3"/></svg>`
 }
 
+function describeError(error) {
+  if (error == null) return 'لم يتم إرجاع تفاصيل من المكتبة'
+  if (typeof error === 'string') return error
+  if (error instanceof Error) return error.stack || error.message || error.name
+  if (typeof error === 'object') {
+    try {
+      const details = JSON.stringify(error, Object.getOwnPropertyNames(error))
+      if (details && details !== '{}') return details
+    } catch {}
+    return String(error)
+  }
+  return String(error)
+}
+
 function App() {
   const [selected, setSelected] = useState(products[0])
   const [cameraOn, setCameraOn] = useState(false)
@@ -51,7 +65,7 @@ function App() {
         console.warn('MediaPipe WASM source failed:', source, error)
       }
     }
-    if (!vision) throw new Error(`تعذر تحميل ملفات MediaPipe (WASM): ${wasmError?.message || 'مصدر الملفات غير متاح'}`)
+    if (!vision) throw new Error(`تعذر تحميل ملفات MediaPipe (WASM): ${describeError(wasmError)}`)
 
     const modelAssetPath = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
     const options = { runningMode: 'VIDEO', numPoses: 1 }
@@ -71,7 +85,7 @@ function App() {
           baseOptions: { modelAssetPath, delegate: 'GPU' },
         })
       } catch (gpuFailure) {
-        throw new Error(`فشل تشغيل نموذج تتبع الجسم. CPU: ${gpuError?.message || 'غير معروف'} | GPU: ${gpuFailure?.message || 'غير معروف'}`)
+        throw new Error(`فشل تشغيل نموذج تتبع الجسم. CPU: ${describeError(gpuError)} | GPU: ${describeError(gpuFailure)}`)
       }
     }
     return poseRef.current
@@ -85,7 +99,7 @@ function App() {
       streamRef.current = stream
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play() }
       setCameraOn(true)
-      try { await loadPose(); setPoseReady(true) } catch (e) { console.error('Virtual try-on pose initialization failed:', e); setError(e?.message || 'تعذر تحميل تتبع الجسم. افتح تفاصيل الخطأ من وحدة تحكم المتصفح.') }
+      try { await loadPose(); setPoseReady(true) } catch (e) { console.error('Virtual try-on pose initialization failed:', e, e?.stack); setError(describeError(e) || 'تعذر تحميل تتبع الجسم. افتح تفاصيل الخطأ من وحدة تحكم المتصفح.') }
       drawFrame()
     } catch (e) {
       setError(e.name === 'NotAllowedError' ? 'لم تسمح للمتصفح باستخدام الكاميرا. فعّل الإذن من إعدادات الموقع ثم حاول مرة أخرى.' : e.message || 'حدثت مشكلة أثناء تشغيل الكاميرا.')
