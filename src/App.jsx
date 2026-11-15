@@ -49,10 +49,18 @@ function App() {
   const poseRef = useRef(null)
   const rafRef = useRef(null)
   const garmentRef = useRef(null)
+  const garmentImageRef = useRef(null)
   const lastVideoTimeRef = useRef(-1)
   const bodyDetectedRef = useRef(false)
 
-  useEffect(() => { garmentRef.current = selected; if (cameraOn) drawFrame() }, [selected])
+  useEffect(() => {
+    garmentRef.current = selected
+    const image = new Image()
+    image.onload = () => { garmentImageRef.current = image }
+    image.onerror = () => { garmentImageRef.current = null; console.error('Failed to render selected garment SVG') }
+    image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(garmentSvg(selected))
+    if (cameraOn) drawFrame()
+  }, [selected])
   useEffect(() => () => stopCamera(), [])
 
   async function loadPose() {
@@ -156,10 +164,15 @@ function App() {
           const torso = Math.hypot(hx-sx, hy-sy)
           const width = shoulder * 2.12, height = Math.max(torso * 2.35, shoulder * 2.1)
           const angle = Math.atan2((rs.y-ls.y)*h, (rs.x-ls.x)*w)
-          const svg = garmentSvg(garmentRef.current)
-          const img = new Image()
-          img.onload = () => { ctx.save(); ctx.translate(sx, sy + shoulder*.12); ctx.rotate(angle); ctx.globalAlpha = .88; ctx.drawImage(img, -width/2, -shoulder*.48, width, height); ctx.restore() }
-          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+          const garmentImage = garmentImageRef.current
+          if (garmentImage?.complete && garmentImage.naturalWidth > 0) {
+            ctx.save()
+            ctx.translate(sx, sy + shoulder * .12)
+            ctx.rotate(angle)
+            ctx.globalAlpha = .92
+            ctx.drawImage(garmentImage, -width / 2, -shoulder * .48, width, height)
+            ctx.restore()
+          }
         } else if (bodyDetectedRef.current) {
           bodyDetectedRef.current = false
           setBodyDetected(false)
