@@ -35,11 +35,45 @@ function App() {
 
   async function loadPose() {
     if (poseRef.current) return poseRef.current
-    const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm')
-    poseRef.current = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate: 'GPU' },
-      runningMode: 'VIDEO', numPoses: 1,
-    })
+
+    const wasmSources = [
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
+      'https://unpkg.com/@mediapipe/tasks-vision@0.10.22/wasm',
+    ]
+    let vision
+    let wasmError
+    for (const source of wasmSources) {
+      try {
+        vision = await FilesetResolver.forVisionTasks(source)
+        break
+      } catch (error) {
+        wasmError = error
+        console.warn('MediaPipe WASM source failed:', source, error)
+      }
+    }
+    if (!vision) throw new Error(`تعذر تحميل ملفات MediaPipe (WASM): ${wasmError?.message || 'مصدر الملفات غير متاح'}`)
+
+    const modelAssetPath = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
+    const options = { runningMode: 'VIDEO', numPoses: 1 }
+    let gpuError
+    try {
+      // CPU is more compatible with mobile browsers and devices without WebGL support.
+      poseRef.current = await PoseLandmarker.createFromOptions(vision, {
+        ...options,
+        baseOptions: { modelAssetPath, delegate: 'CPU' },
+      })
+    } catch (error) {
+      gpuError = error
+      console.warn('MediaPipe CPU delegate failed, trying GPU:', error)
+      try {
+        poseRef.current = await PoseLandmarker.createFromOptions(vision, {
+          ...options,
+          baseOptions: { modelAssetPath, delegate: 'GPU' },
+        })
+      } catch (gpuFailure) {
+        throw new Error(`فشل تشغيل نموذج تتبع الجسم. CPU: ${gpuError?.message || 'غير معروف'} | GPU: ${gpuFailure?.message || 'غير معروف'}`)
+      }
+    }
     return poseRef.current
   }
 
@@ -51,7 +85,7 @@ function App() {
       streamRef.current = stream
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play() }
       setCameraOn(true)
-      try { await loadPose(); setPoseReady(true) } catch (e) { console.error(e); setError('تعذر تحميل تتبع الجسم. تأكد من اتصال الإنترنت، ويمكنك مشاهدة الكاميرا بدون التتبع.') }
+      try { await loadPose(); setPoseReady(true) } catch (e) { console.error('Virtual try-on pose initialization failed:', e); setError(e?.message || 'تعذر تحميل تتبع الجسم. افتح تفاصيل الخطأ من وحدة تحكم المتصفح.') }
       drawFrame()
     } catch (e) {
       setError(e.name === 'NotAllowedError' ? 'لم تسمح للمتصفح باستخدام الكاميرا. فعّل الإذن من إعدادات الموقع ثم حاول مرة أخرى.' : e.message || 'حدثت مشكلة أثناء تشغيل الكاميرا.')
