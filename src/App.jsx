@@ -18,10 +18,16 @@ function describeError(error) {
   if (error == null) return 'لم يتم إرجاع تفاصيل من المكتبة'
   if (typeof error === 'string') return error
   if (error instanceof Error) return error.stack || error.message || error.name
+  if (typeof Event !== 'undefined' && error instanceof Event) {
+    const target = error.target
+    const targetInfo = target && 'src' in target ? ` | المصدر: ${target.src}` : ''
+    return `حدث المتصفح "${error.type}" أثناء تحميل أو تهيئة النموذج${targetInfo}. غالبًا تعذر تحميل أحد ملفات النموذج أو WASM.`
+  }
   if (typeof error === 'object') {
     try {
       const details = JSON.stringify(error, Object.getOwnPropertyNames(error))
       if (details && details !== '{}') return details
+      if (error.type || error.target) return `حدث المتصفح: ${error.type || 'خطأ تحميل'}`
     } catch {}
     return String(error)
   }
@@ -67,14 +73,29 @@ function App() {
     }
     if (!vision) throw new Error(`تعذر تحميل ملفات MediaPipe (WASM): ${describeError(wasmError)}`)
 
+    // Fetch the model ourselves so network/CORS/HTTP failures are reported clearly
+    // instead of being reduced by the WASM loader to an opaque browser Event.
     const modelAssetPath = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
+    let modelResponse
+    try {
+      modelResponse = await fetch(modelAssetPath, { mode: 'cors', cache: 'force-cache' })
+    } catch (error) {
+      throw new Error(`تعذر الاتصال بخادم نموذج تتبع الجسم: ${describeError(error)}. تحقق من حظر storage.googleapis.com أو جرّب شبكة أخرى.`)
+    }
+    if (!modelResponse.ok) {
+      throw new Error(`خادم نموذج تتبع الجسم أعاد HTTP ${modelResponse.status} ${modelResponse.statusText}`)
+    }
+    const modelBytes = new Uint8Array(await modelResponse.arrayBuffer())
+    if (modelBytes.byteLength < 100000) {
+      throw new Error(`تم تحميل ملف النموذج بحجم غير متوقع: ${modelBytes.byteLength} بايت`)
+    }
     const options = { runningMode: 'VIDEO', numPoses: 1 }
     let gpuError
     try {
       // CPU is more compatible with mobile browsers and devices without WebGL support.
       poseRef.current = await PoseLandmarker.createFromOptions(vision, {
         ...options,
-        baseOptions: { modelAssetPath, delegate: 'CPU' },
+        baseOptions: { modelAssetBuffer: modelBytes, delegate: 'CPU' },
       })
     } catch (error) {
       gpuError = error
@@ -82,7 +103,7 @@ function App() {
       try {
         poseRef.current = await PoseLandmarker.createFromOptions(vision, {
           ...options,
-          baseOptions: { modelAssetPath, delegate: 'GPU' },
+          baseOptions: { modelAssetBuffer: modelBytes, delegate: 'GPU' },
         })
       } catch (gpuFailure) {
         throw new Error(`فشل تشغيل نموذج تتبع الجسم. CPU: ${describeError(gpuError)} | GPU: ${describeError(gpuFailure)}`)
